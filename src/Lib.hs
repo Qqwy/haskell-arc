@@ -14,12 +14,11 @@ import qualified System.IO.Linear as Linear
 import qualified Data.Vector.Generic
 import Data.Array.Mutable.Linear (Array)
 import Debug.Trace (traceShow)
+import qualified Data.Vector.Mutable.Linear
+import qualified Data.Vector
 
 data StrictPair a b = StrictPair !a !b
   deriving (Prelude.Eq, Prelude.Ord, Show)
-
-add1 :: Word %1 -> Word
-add1 = (+ 1)
 
 someFunc :: IO ()
 someFunc = print "Hello"
@@ -99,10 +98,10 @@ modify = Unsafe.Linear.toLinear2 $
         Prelude.pure (Arc ref)
       (_, val) -> unsafeDecCount arc `seq` unsafeNew (f val)
 
-class Thawable a where
-  type family Thawed a
-  thaw :: a %1 -> Thawed a
-  freeze :: Thawed a %1 -> a
+-- class Thawable a where
+--   type family Thawed a
+--   thaw :: a %1 -> Thawed a
+--   freeze :: Thawed a %1 -> a
 
 -- fromThawed :: Thawable a => Thawed a %1 -> Arc a
 -- fromThawed thawed =
