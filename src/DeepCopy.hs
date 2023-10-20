@@ -83,6 +83,41 @@ instance DeepCopy Natural where
       orig@(NS i) -> (orig, NS i)
       orig@(NB i) -> (orig, NB i)
 
+instance DeepCopy Int8 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(I8# i) -> (orig, I8# i)
+
+instance DeepCopy Int16 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(I16# i) -> (orig, I16# i)
+
+instance DeepCopy Int32 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(I32# i) -> (orig, I32# i)
+
+instance DeepCopy Int64 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(I64# i) -> (orig, I64# i)
+
+instance DeepCopy Word8 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(W8# i) -> (orig, W8# i)
+
+instance DeepCopy Word16 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(W16# i) -> (orig, W16# i)
+
+instance DeepCopy Word32 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(W32# i) -> (orig, W32# i)
+
+instance DeepCopy Word64 where
+    deepCopy = Unsafe.toLinear $ \case
+      orig@(W64# i) -> (orig, W64# i)
+
+
+-- Generic implementation:
+
 instance (Generic a, GDeepCopy (Rep a)) => DeepCopy (Generically a) where
   deepCopy (Generically x) = x & genericDeepCopy & lBimap Generically
 
