@@ -8,6 +8,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module DeepCopy where
 
@@ -130,22 +134,27 @@ class GDeepCopy f where
 
 instance GDeepCopy V1 where
   gDeepCopy = \case {}
+  {-# INLINEABLE gDeepCopy #-}
 
 instance GDeepCopy U1 where
   gDeepCopy U1 = (U1, U1)
+  {-# INLINEABLE gDeepCopy #-}
 
 instance (DeepCopy c) => GDeepCopy (K1 i c) where
   gDeepCopy (K1 x) = x & deepCopy & lBimap K1
+  {-# INLINEABLE gDeepCopy #-}
 
 instance GDeepCopy a => GDeepCopy (M1 i c a) where
   gDeepCopy (M1 x) = x & gDeepCopy & lBimap M1
+  {-# INLINEABLE gDeepCopy #-}
 
-instance GDeepCopy f => GDeepCopy (MP1 'One f) where
-  gDeepCopy (MP1 x) = x & gDeepCopy & lBimap MP1
+-- instance GDeepCopy f => GDeepCopy (MP1 'One f) where
+--   gDeepCopy (MP1 x) = x & gDeepCopy & lBimap MP1
 
 instance (GDeepCopy f, GDeepCopy g) => GDeepCopy (f :+: g) where
   gDeepCopy (L1 x) = x & gDeepCopy & lBimap L1
   gDeepCopy (R1 x) = x & gDeepCopy & lBimap R1
+  {-# INLINEABLE gDeepCopy #-}
 
 instance (GDeepCopy f, GDeepCopy g) => GDeepCopy (f :*: g) where
   gDeepCopy (x :*: y) =
@@ -156,22 +165,29 @@ instance (GDeepCopy f, GDeepCopy g) => GDeepCopy (f :*: g) where
             & \case
               (y1, y2) ->
                 (x1 :*: y1, x2 :*: y2)
+  {-# INLINEABLE gDeepCopy #-}
 
 -- Helper function to apply a function to both elements of a pair linearly.
 lBimap :: (a %1 -> b) -> (a, a) %1 -> (b, b)
 lBimap f (x, y) = (f x, f y)
+{-# INLINEABLE lBimap #-}
 
 instance GDeepCopy UChar where
     gDeepCopy = Unsafe.toLinear (\orig@(UChar x) -> (orig, UChar x))
+    {-# INLINEABLE gDeepCopy #-}
 
 instance GDeepCopy UDouble where
     gDeepCopy = Unsafe.toLinear (\orig@(UDouble x) -> (orig, UDouble x))
+    {-# INLINEABLE gDeepCopy #-}
 
 instance GDeepCopy UFloat where
     gDeepCopy = Unsafe.toLinear (\orig@(UFloat x) -> (orig, UFloat x))
+    {-# INLINEABLE gDeepCopy #-}
 
 instance GDeepCopy UInt where
     gDeepCopy = Unsafe.toLinear (\orig@(UInt x) -> (orig, UInt x))
+    {-# INLINEABLE gDeepCopy #-}
 
 instance GDeepCopy UWord where
     gDeepCopy = Unsafe.toLinear (\orig@(UWord x) -> (orig, UWord x))
+    {-# INLINEABLE gDeepCopy #-}
