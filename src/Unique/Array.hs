@@ -1,34 +1,37 @@
-{-# LANGUAGE LinearTypes #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE MagicHash #-}
-{-# LANGUAGE UnliftedNewtypes #-}
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE LinearTypes #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UnliftedNewtypes #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 -- | Uniqueness-based mutable arrays which do not depend on fusion for efficiency.
 --
 -- Much of this module's internals was copied verbatinm from the mutable arrays in `linear-base`.
 module Unique.Array where
-import Prelude.Linear
-import qualified Prelude
-import qualified GHC.Exts as GHC
-import qualified Unsafe.Linear as Unsafe
+
+import qualified Data.List.Linear
 import Data.Vector.Internal.Check (HasCallStack)
+import qualified GHC.Exts as GHC
+import Prelude.Linear
 import Unique (Unique)
 import qualified Unique
-import qualified Data.List.Linear
+import qualified Unsafe.Linear as Unsafe
+import qualified Prelude
 
 eggsample :: ([Int], [Int], [Int])
-eggsample = 
-    Unique.scoped (fromList [1,2,3]) $ \arr123 -> 
-        arr123                                 -- arr123
-        & Unique.Array.map (Prelude.Linear.+1) -- arr234
-        & fromList [4, 5, 6]                   -- (arr456, arr234)
-        & fromList [7, 8, 9]                   -- (arr789, (arr456, arr234))
-        & \(arr789, (arr456, arr234)) -> (toList arr234, toList arr456, toList arr789)
-        -- & dup2
-        -- & (\(x, y) -> (Unique.Array.toList x, Unique.Array.toList y))
+eggsample =
+  Unique.scoped (fromList [1, 2, 3]) $ \arr123 ->
+    arr123 -- arr123
+      & Unique.Array.map (Prelude.Linear.+ 1) -- arr234
+      & fromList [4, 5, 6] -- (arr456, arr234)
+      & fromList [7, 8, 9] -- (arr789, (arr456, arr234))
+      & \(arr789, (arr456, arr234)) -> (toList arr234, toList arr456, toList arr789)
+
+-- & dup2
+-- & (\(x, y) -> (Unique.Array.toList x, Unique.Array.toList y))
 
 -- A lifted mutable array holding @a@s.
 data Array a = Array (Array# a)
@@ -37,28 +40,28 @@ data Array a = Array (Array# a)
 newtype Array# a = Array# (GHC.MutableArray# GHC.RealWorld a)
 
 fromList :: Unique b => [a] %1 -> b %1 -> (Array a, b)
-fromList list b = 
-    list
+fromList list b =
+  list
     & Data.List.Linear.length
-    & (\(Ur size, list') -> 
-        alloc size (error "invariant violation: unintialized array position" :: a) b
-        & (\(arr, b) -> (doWrites (listWithIndexes list') arr, b))
-    )
-    where
-        -- NOTE: Would be nice if this function would be made part of Data.List.Linear.
-        listWithIndexes :: [a] %1 -> [(a, Int)]
-        listWithIndexes = Unsafe.toLinear (\list -> Prelude.zip list [0..])
-        doWrites :: [(a, Int)] %1 -> Array a %1 -> Array a
-        doWrites [] arr = arr
-        doWrites ((a, ix) : xs) arr = doWrites xs (unsafeSet ix a arr)
+    & ( \(Ur size, list') ->
+          alloc size (error "invariant violation: unintialized array position" :: a) b
+            & (\(arr, b) -> (doWrites (listWithIndexes list') arr, b))
+      )
+  where
+    -- NOTE: Would be nice if this function would be made part of Data.List.Linear.
+    listWithIndexes :: [a] %1 -> [(a, Int)]
+    listWithIndexes = Unsafe.toLinear (\list -> Prelude.zip list [0 ..])
+    doWrites :: [(a, Int)] %1 -> Array a %1 -> Array a
+    doWrites [] arr = arr
+    doWrites ((a, ix) : xs) arr = doWrites xs (unsafeSet ix a arr)
 
 alloc :: Unique b => Int -> a -> b %1 -> (Array a, b)
 alloc size elem b = (Array (unsafeArrAlloc size elem), b)
-    where
-        unsafeArrAlloc (GHC.I# s) a = GHC.runRW# Prelude.$ \st ->
-            case GHC.newArray# s a st of
-                (# _, arr #) -> Array# arr
-        {-# NOINLINE unsafeArrAlloc #-}
+  where
+    unsafeArrAlloc (GHC.I# s) a = GHC.runRW# Prelude.$ \st ->
+      case GHC.newArray# s a st of
+        (# _, arr #) -> Array# arr
+    {-# NOINLINE unsafeArrAlloc #-}
 
 -- | Return the array's elements as a lazy list.
 toList :: Array a %1 -> [a]
@@ -78,8 +81,6 @@ toList# = unArray# Prelude.$ \arr ->
           case GHC.runRW# (GHC.readArray# arr i#) of
             (# _, ret #) -> ret : go (i Prelude.+ 1) len arr
 {-# NOINLINE toList# #-}
-
-
 
 -- | Extract the underlying 'GHC.MutableArray#', consuming the 'Array#'
 -- in process.
@@ -135,7 +136,7 @@ unsafeSet ix val (Array arr) =
   Array (unsafeSet# ix val arr)
 
 unsafeSet# :: Int %1 -> a %1 -> Array# a %1 -> Array# a
-unsafeSet#  = Unsafe.toLinear3 go
+unsafeSet# = Unsafe.toLinear3 go
   where
     go :: Int -> a -> Array# a -> Array# a
     go (GHC.I# i) (a :: a) (Array# arr) =
@@ -152,7 +153,7 @@ instance Dupable (Array a) where
       wrap :: (# Array# a, Array# a #) %1 -> (Array a, Array a)
       wrap (# a1, a2 #) = (Array a1, Array a2)
 
-instance Unique (Array a) where
+instance Unique (Array a)
 
 -- | Consume an 'Array#'.
 --
@@ -187,19 +188,17 @@ omap :: (a %1 -> a) -> Array a %1 -> Array a
 omap (f :: a %1 -> a) (Array arr) = Array (omap# f arr)
 
 omap# :: (a %1 -> a) -> Array# a %1 -> Array# a
-omap# ( f :: a %1 -> a) = Unsafe.toLinear $ \(Array# as) ->
-        let 
-            len :: GHC.Int#
-            len = GHC.sizeofMutableArray# as
-            go i st
-                | GHC.I# i Prelude.== GHC.I# len = ()
-                | Prelude.otherwise = 
-                    case GHC.readArray# as i st of
-                        (# st', a #) ->
-                            case GHC.writeArray# as i (f a) st' of
-                                !st'' -> go (i GHC.+# 1#) st''
-        in
-    GHC.runRW# (go 0#) `GHC.seq` Array# as
+omap# (f :: a %1 -> a) = Unsafe.toLinear $ \(Array# as) ->
+  let len :: GHC.Int#
+      len = GHC.sizeofMutableArray# as
+      go i st
+        | GHC.I# i Prelude.== GHC.I# len = ()
+        | Prelude.otherwise =
+            case GHC.readArray# as i st of
+              (# st', a #) ->
+                case GHC.writeArray# as i (f a) st' of
+                  !st'' -> go (i GHC.+# 1#) st''
+   in GHC.runRW# (go 0#) `GHC.seq` Array# as
 {-# NOINLINE omap# #-}
 
 map :: (a %1 -> b) -> Array a %1 -> Array b
