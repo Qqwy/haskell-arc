@@ -31,7 +31,6 @@ library
       Linearly
       Unique
       Unique.Array
-      Unique.Instances
   other-modules:
       Paths_arc
   autogen-modules:
