@@ -7,7 +7,6 @@
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_GHC -ddump-rule-firings #-}
 
 -- | Uniqueness-based mutable arrays which do not depend on fusion for efficiency.
 --
@@ -32,7 +31,6 @@ module Unique.Array
     set,
     unsafeSet,
     Unique.Array.map,
-    omap,
     eggsample,
     blogExample,
     -- = Unlifted unique mutable arrays
@@ -66,8 +64,8 @@ blogExample :: [Int] -> (Int, [Int])
 blogExample list =
   Unique.scoped (fromList list) $ \arr ->
     alloc 2 0 arr & \(prefix, arr) ->
-      get 0 arr & \(Ur a0, arr) ->
-        get 1 arr & \(Ur a1, arr) ->
+      get 0 arr & \(a0, arr) ->
+        get 1 arr & \(a1, arr) ->
           ( prefix
               & set 0 a0
               & set 1 a1
@@ -119,7 +117,14 @@ fromList list b =
     listWithIndexes = Unsafe.toLinear (\list -> Prelude.zip list [0 ..])
     doWrites :: [(a, Int)] %1 -> Array a %1 -> Array a
     doWrites [] arr = arr
-    doWrites ((a, ix) : xs) arr = doWrites xs (unsafeSet ix a arr)
+    doWrites ((a, ix) : xs) arr = doWrites xs (writeEmpty ix arr a)
+    writeEmpty :: Int %1 -> Array a %1 -> a %1 -> Array a
+    writeEmpty ix arr a =
+      arr
+        -- SAFETY: Array has same size as input list
+        & unsafeSwap ix a
+        -- SAFETY: The consumed element is a bottom:
+        & Unsafe.toLinear (\(_, arr) -> arr)
 
 -- | [Unique constructor]("Unique#unique_constructor") to create an `Array` with all elements initialized with the same value.
 alloc :: Unique witness => Int -> a -> witness %1 -> (Array a, witness)
@@ -170,6 +175,30 @@ size# = Unsafe.toLinear go
       let !s = GHC.sizeofMutableArray# arr
        in (# Ur (GHC.I# s), Array# arr #)
 
+swap :: HasCallStack => Int %1 -> a %1 -> Array a %1 -> (a, Array a)
+swap i val arr = dup2 i & \(i, i2) -> unsafeSwap i val (assertIndexInRange i2 arr)
+
+unsafeSwap :: Int %1 -> a %1 -> Array a %1 -> (a, Array a)
+unsafeSwap ix val (Array arr) =
+  wrap (unsafeSwap# ix val arr)
+  where
+    wrap :: (# a, Array# a #) %1 -> (a, Array a)
+    wrap (# ret, arr #) = (ret, Array arr)
+
+-- NOTE: We pretend we use the index linearly
+-- But actually we don't. This is fine, because we _evaluate_ it exactly once,
+-- after which (because we have an unlifted Int#) there is no risk of linear stuff hiding.
+-- What we do here is a shorthand for calling `move` on the index.
+unsafeSwap# :: Int %1 -> a %1 -> Array# a %1 -> (# a, Array# a #)
+unsafeSwap# = Unsafe.toLinear3 $ \(GHC.I# i) elem (Array# arr) ->
+  GHC.runRW# $ \st ->
+    case GHC.readArray# arr i st of
+      (# st, val #) ->
+        case GHC.writeArray# arr i elem st of
+          _st ->
+            (# val, Array# arr #)
+{-# NOINLINE unsafeSwap# #-}
+
 -- | Get the value of an index. The index should be less than the arrays 'size',
 -- otherwise this errors.
 get :: (HasCallStack, Dupable a) => Int -> Array a %1 -> (a, Array a)
@@ -186,7 +215,7 @@ unsafeGet ix (Array arr) = wrap (unsafeGet# ix arr)
 unsafeGet# :: Dupable a => Int -> Array# a %1 -> (# a, Array# a #)
 unsafeGet# (GHC.I# i) = Unsafe.toLinear go
   where
-    go :: Array# a -> (# a, Array# a #)
+    go :: Dupable a => Array# a -> (# a, Array# a #)
     go (Array# arr) =
       case GHC.runRW# (GHC.readArray# arr i) of
         (# _, ret #) -> dup ret & \(_, copy) -> (# copy, Array# arr #)
@@ -208,15 +237,15 @@ unsafeSet ix val (Array arr) =
 unsafeSet# :: Consumable a => Int %1 -> a %1 -> Array# a %1 -> Array# a
 unsafeSet# = Unsafe.toLinear3 go
   where
-    go :: Int -> a -> Array# a -> Array# a
+    go :: Consumable a => Int -> a -> Array# a -> Array# a
     go (GHC.I# i) (a :: a) (Array# arr) =
-        GHC.runRW# $ \st ->
-            case (GHC.readArray# arr i) st of
-                (# _, val #) ->
-                    case (GHC.writeArray# arr i a) st of
-                        _ -> 
-                            (consume val) 
-                            & (\() -> Array# arr)
+      GHC.runRW# $ \st ->
+        case (GHC.readArray# arr i) st of
+          (# _, val #) ->
+            case (GHC.writeArray# arr i a) st of
+              _ ->
+                (consume val)
+                  & (\() -> Array# arr)
 {-# NOINLINE unsafeSet# #-} -- prevents the runRW# effect from being reordered
 
 instance Consumable (Array a) where
@@ -254,39 +283,19 @@ dup2# = Unsafe.toLinear go
 {-# NOINLINE dup2# #-}
 
 -- | Check if given index is within the Array, otherwise panic.
-assertIndexInRange :: Int -> Array a %1 -> Array a
+assertIndexInRange :: Int %1 -> Array a %1 -> Array a
 assertIndexInRange i arr =
-  size arr & \(Ur s, arr') ->
-    if 0 <= i && i < s
-      then arr'
-      else arr' `lseq` error "Array: index out of bounds"
+  dup2 i & \(i1, i2) ->
+    size arr & \(Ur s, arr') ->
+      if 0 <= i1 && i2 < s
+        then arr'
+        else arr' `lseq` error "Array: index out of bounds"
 
 -- | Map a linear function over an array.
 --
--- Because the input and output array type is the same, the array can be modified in place.
--- No extra array has to be allocated.
-omap :: (a %1 -> a) -> Array a %1 -> Array a
-omap (f :: a %1 -> a) (Array arr) = Array (omap# f arr)
-
-omap# :: (a %1 -> a) -> Array# a %1 -> Array# a
-omap# (f :: a %1 -> a) = Unsafe.toLinear $ \(Array# as) ->
-  let len :: GHC.Int#
-      len = GHC.sizeofMutableArray# as
-      go i st
-        | GHC.I# i Prelude.== GHC.I# len = ()
-        | Prelude.otherwise =
-            case GHC.readArray# as i st of
-              (# st', a #) ->
-                case GHC.writeArray# as i (f a) st' of
-                  !st'' -> go (i GHC.+# 1#) st''
-   in GHC.runRW# (go 0#) `GHC.seq` Array# as
-{-# NOINLINE omap# #-}
-
--- | Map a linear function over an array.
---
--- An extra array needs to be allocated to store the result.
---
--- A rewrite rule exists to turn `map` into `omap` whenever possible to avoid this allocation.
+-- Because the array's elements are lifted,
+-- the memory representation of the input array and output array match
+-- and thus we can re-use the input array's memory without doing extra allocation.
 map :: (a %1 -> b) -> Array a %1 -> Array b
 map f (Array arr) = Array (map# f arr)
 
@@ -316,9 +325,6 @@ map# (f :: a %1 -> b) =
     )
 {-# NOINLINE map# #-}
 
--- Only fires when map# is called with a function `a -> a` (otherwise it does not typecheck)
-{-# RULES "map#/omap#" forall f. Unique.Array.map# f = Unique.Array.omap# f #-}
-
 consumingSum :: AddIdentity a => Array a %1 -> a
 consumingSum arr =
   size arr & \(Ur s, arr') ->
@@ -327,5 +333,5 @@ consumingSum arr =
     go :: AddIdentity a => a %1 -> Int -> Array a %1 -> a
     go acc 0 arr = arr `lseq` acc
     go acc i arr =
-      get (i - 1) arr & \(a, arr') ->
+      unsafeSwap (i - 1) (error "Empty placeholder element from `consumingSum`") arr & \(a, arr') ->
         go (acc + a) (i - 1) arr'
