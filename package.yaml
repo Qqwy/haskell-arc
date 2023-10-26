@@ -33,7 +33,7 @@ ghc-options:
 - -Wmissing-export-lists
 - -Wmissing-home-modules
 - -Wpartial-fields
-- -Wredundant-constraints
+#- -Wredundant-constraints
 - -O2
 
 library:
