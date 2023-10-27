@@ -64,6 +64,7 @@ instance Dupable UniqueUnit where
 -- | [Unique constructor]("Unique#unique_constructor") for `UniqueUnit`.
 unit :: Unique witness => witness %1 -> (UniqueUnit, witness)
 unit x = (UniqueUnit, x)
+{-# INLINE unit #-}
 
 -- | Helper instance which allows you to call many unique constructor functions in a row,
 -- without having to explicitly pass around the uniqueness witnesses each time.
@@ -75,6 +76,7 @@ instance (Unique a, Unique b) => Unique (a, b)
 -- Given a `b` that you no longer need, consume it after using it as a uniqueness witness to create `a`.
 consuming :: (Unique u, Unique witness, Consumable witness)  => (witness %1 -> (u, witness)) %1 -> witness %1 -> u
 consuming f = (\(a, b) -> b `lseq` a) . f
+{-# INLINE consuming #-}
 
 -- | Combinator which allows you to use a unique constructor function to kickstart a unique scope.
 --
@@ -95,3 +97,4 @@ scoped constructor callback =
     UniqueUnit
     & consuming constructor
     & callback
+{-# INLINE scoped #-}

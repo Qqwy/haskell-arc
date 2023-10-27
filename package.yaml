@@ -35,7 +35,8 @@ ghc-options:
 - -Wpartial-fields
 #- -Wredundant-constraints
 - -O2
-
+- -fspecialise-aggressively
+- -fexpose-all-unfoldings
 library:
   source-dirs: src
 
